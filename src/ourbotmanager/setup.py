@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            "base_motor_controller=ourbotmanager.base_motor_controller:main"
+            "base_motor_controller=ourbotmanager.base_motor_controller:main",
+            "base_monitor=ourbotmanager.base_monitor:main"
         ], 
     },
 )

@@ -5,8 +5,6 @@ from geometry_msgs.msg import Twist
 import serial
 import os
 
-
-
 class BaseMotorController(Node):
     SERIAL_PORT = '/dev/ttyUSB0'
     PWD_MIN = 10 # Minumum PWD supported by base
