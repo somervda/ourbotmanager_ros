@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist,Pose,Point,Quaternion
+import numpy as np
 import serial
 import os
 import math
@@ -10,14 +11,14 @@ class BaseMotorController(Node):
     SERIAL_PORT = '/dev/ttyUSB0'
 
     PWD_MIN = 10 # Minumum PWD supported by base
-    LINEAR_TO_PWD = 100 # if linear.x = 1 m/s then set speed (pwd) to 100
-    ANGULAR_TO_PWD = 90 # if angular.z = 1 rad/s then set speed (pwd) to 100
+    LINEAR_TO_PWD = 50 # if linear.x = 2 m/s then set speed (pwd) to 100
+    ANGULAR_TO_PWD = 90 # if angular.z = 1 rad/s then set speed (pwd) to 90
 
     # Keep a running plot of location and orentation of the base
     # as feedback is returned from the base using meters and radians
-    plot_x = 0
-    plot_y = 0
-    plot_angle = 0
+    plot_x = 0.0
+    plot_y = 0.0
+    plot_angle = 0.0
 
     # Conversion factors for converting the base_feedback info that is in motor encoder ticks
     # to meters and radians used by the plot message
@@ -37,6 +38,8 @@ class BaseMotorController(Node):
         self.twist_subscriber = self.create_subscription(Twist,"base/cmd_vel",self.send_cmd_vel,10)
         # Fire up an asyncronous timer to check for messages from the ft232 on SERIAL_PORT
         self.read_timer = self.create_timer(0.05 , self.read_serial) 
+        # Reboot the uController for the new session
+        self.send_serial("RB")
         self.get_logger().info("base_motor_controller has started")
 
     def send_cmd_vel(self,msg):
@@ -75,15 +78,18 @@ class BaseMotorController(Node):
         self.ser.write((send + "\n").encode())
 
     def read_serial(self):
-        readChr = self.ser.read(1).decode('utf-8')
+        readChr = self.ser.read(1).decode()
         while len(readChr) > 0 :
             if readChr == "\n":
                 self.get_logger().info(self.base_feedback)
                 self.process_plot()
                 self.base_feedback = ""
+            elif readChr == "\x00":
+                # Usually see one of these in the queue after the uController is reset
+                pass
             else:
                 self.base_feedback += readChr
-            readChr = self.ser.read(1).decode('utf-8')
+            readChr = self.ser.read(1).decode()
     
     def process_plot(self):
         # Calculate location and angle of the base from the base feedback 
@@ -102,6 +108,8 @@ class BaseMotorController(Node):
                     ticks = int(ticks_string)
                     if baseMode == "T":
                         self.plot_angle += (self.TICKS_TO_RADIANS * ticks)
+                        # Clean up radians so not more than 360 degrees (2pi) is reported.
+                        self.plot_angle %= (2 * math.pi)
                         self.publish_Plot()
                     else:
                         # Calculate plot_x and plot_y co-ordinants based on current location, plot_angle and distance moved
@@ -111,7 +119,46 @@ class BaseMotorController(Node):
                         
     def publish_Plot(self):
         self.get_logger().info("plot_x:" + str(self.plot_x) + " plot_y:" + str(self.plot_y) + " plot_angle:" + str(self.plot_angle))
-        
+        # Convert plot_angle to a quaternion for a pose message https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+        # plot_angle is equivalent to yaw
+        pose_msg = Pose()
+        pose_msg.position.x = self.plot_x
+        pose_msg.position.y = self.plot_y
+        pose_msg.position.z = 0.0
+        my_quaternion = self.euler_to_quaternion(self.plot_angle,0.0,0.0)
+        pose_msg.orientation.x = my_quaternion[0]
+        pose_msg.orientation.y = my_quaternion[1]
+        pose_msg.orientation.z = my_quaternion[2]
+        pose_msg.orientation.w = my_quaternion[3]
+        self.pub.publish(pose_msg)
+
+    def euler_to_quaternion(self,yaw, pitch, roll):
+        qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+        qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
+        qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
+        qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+        return [qx, qy, qz, qw]
+
+    # def quaternionRotation(self,x=0.0, y=0.0, z=0.0):
+    #     quaternionRotation = []
+
+    #     x = math.radians(x)
+    #     y = math.radians(y)
+    #     z = math.radians(z)
+
+    #     chr = math.cos(x/2)
+    #     shr = math.sin(x/2)
+    #     chp = math.cos(y/2)
+    #     shp = math.sin(y/2)
+    #     chd = math.cos(z/2)
+    #     shd = math.sin(z/2)
+
+    #     quaternionRotation.append((chd*chp*shr-shd*shp*chr))
+    #     quaternionRotation.append((chd*shp*chr+shd*chp*shr))
+    #     quaternionRotation.append((shd*chp*chr-chd*shp*shr))
+    #     quaternionRotation.append((chd*chp*chr+shd*shp*shr))
+
+    #     return(quaternionRotation)
 
 def main(args=None):
     rclpy.init(args=args)
