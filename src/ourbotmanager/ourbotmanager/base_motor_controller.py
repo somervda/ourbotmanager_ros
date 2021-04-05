@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist,Pose,Point,Quaternion
-import numpy as np
+# import numpy as np
 import serial
 import os
 import math
@@ -10,22 +10,24 @@ import math
 class BaseMotorController(Node):
     SERIAL_PORT = '/dev/ttyUSB0'
 
+    # Update based on actual base specs.
     PWD_MIN = 10 # Minumum PWD supported by base
     LINEAR_TO_PWD = 50 # if linear.x = 2 m/s then set speed (pwd) to 100
     ANGULAR_TO_PWD = 90 # if angular.z = 1 rad/s then set speed (pwd) to 90
 
-    # Keep a running plot of location and orentation of the base
+    # Keep a track of location and orentation of the base
     # as feedback is returned from the base using meters and radians
-    plot_x = 0.0
-    plot_y = 0.0
-    plot_angle = 0.0
+    pose_x = 0.0
+    pose_y = 0.0
+    pose_angle = 0.0
 
     # Conversion factors for converting the base_feedback info that is in motor encoder ticks
-    # to meters and radians used by the plot message
+    # to meters and radians used by the pose message. Update based on actual base specs.
     TICKS_TO_METERS = 0.001
     TICKS_TO_RADIANS = 0.01
 
-    base_feedback = ""
+    # Information recieved from the base about movement : Type & magnitude
+    base_movement_info = ""
     
     def __init__(self):
         super().__init__("base_motor_controller") 
@@ -37,7 +39,7 @@ class BaseMotorController(Node):
         self.pub = self.create_publisher(Pose,"base/pose",10)
         self.twist_subscriber = self.create_subscription(Twist,"base/cmd_vel",self.send_cmd_vel,10)
         # Fire up an asyncronous timer to check for messages from the ft232 on SERIAL_PORT
-        self.read_timer = self.create_timer(0.05 , self.read_serial) 
+        self.serial_read_timer = self.create_timer(0.1 , self.read_serial) 
         # Reboot the uController for the new session
         self.send_serial("RB")
         self.get_logger().info("base_motor_controller has started")
@@ -81,51 +83,54 @@ class BaseMotorController(Node):
         readChr = self.ser.read(1).decode()
         while len(readChr) > 0 :
             if readChr == "\n":
-                self.get_logger().info(self.base_feedback)
-                self.process_plot()
-                self.base_feedback = ""
+                # Once newline is seen, process the movement info recieved from the base
+                self.get_logger().info(self.base_movement_info)
+                self.process_pose()
+                self.base_movement_info = ""
             elif readChr == "\x00":
                 # Usually see one of these in the queue after the uController is reset
+                # Ignore these characters
                 pass
             else:
-                self.base_feedback += readChr
+                # Build up base_movement_info character by character
+                self.base_movement_info += readChr
             readChr = self.ser.read(1).decode()
     
-    def process_plot(self):
-        # Calculate location and angle of the base from the base feedback 
+    def process_pose(self):
+        # Calculate location and angle of the base from the base movement_info i.e R+00020 
         # and publish as a Plot message
-        if len(self.base_feedback) != 7:
-            self.get_logger().error("Misformed base_feedback message:" + self.base_feedback)
+        if len(self.base_movement_info) != 7:
+            self.get_logger().error("Misformed base_feedback message:" + self.base_movement_info)
         else:
-            baseMode = self.base_feedback[0:1]
+            baseMode = self.base_movement_info[0:1]
             if baseMode not in ["R","T"]:
                 self.get_logger().error("Misformed base_feedback baseMode :" + baseMode)
             else:
-                ticks_string = self.base_feedback[1:7]
+                ticks_string = self.base_movement_info[1:7]
                 if not ticks_string.isnumeric:
                     self.get_logger().error("Misformed base_feedback ticks value :" + ticks_string)
                 else:
                     ticks = int(ticks_string)
                     if baseMode == "T":
-                        self.plot_angle += (self.TICKS_TO_RADIANS * ticks)
+                        self.pose_angle += (self.TICKS_TO_RADIANS * ticks)
                         # Clean up radians so not more than 360 degrees (2pi) is reported.
-                        self.plot_angle %= (2 * math.pi)
-                        self.publish_Plot()
+                        self.pose_angle %= (2 * math.pi)
+                        self.publish_Pose()
                     else:
-                        # Calculate plot_x and plot_y co-ordinants based on current location, plot_angle and distance moved
-                        self.plot_x += (self.TICKS_TO_METERS * ticks) * math.cos(self.plot_angle)
-                        self.plot_y += (self.TICKS_TO_METERS * ticks) * math.sin(self.plot_angle)
-                        self.publish_Plot()
+                        # Calculate pose_x and pose_y co-ordinants based on current location, pose_angle and distance moved
+                        self.pose_x += (self.TICKS_TO_METERS * ticks) * math.cos(self.pose_angle)
+                        self.pose_y += (self.TICKS_TO_METERS * ticks) * math.sin(self.pose_angle)
+                        self.publish_Pose()
                         
-    def publish_Plot(self):
-        self.get_logger().info("plot_x:" + str(self.plot_x) + " plot_y:" + str(self.plot_y) + " plot_angle:" + str(self.plot_angle))
-        # Convert plot_angle to a quaternion for a pose message https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+    def publish_Pose(self):
+        self.get_logger().info("pose_x:" + str(self.pose_x) + " pose_y:" + str(self.pose_y) + " pose_angle:" + str(self.pose_angle))
+        # Convert plot_angle to a quaternion for a pose message see https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
         # plot_angle is equivalent to yaw
         pose_msg = Pose()
-        pose_msg.position.x = self.plot_x
-        pose_msg.position.y = self.plot_y
+        pose_msg.position.x = self.pose_x
+        pose_msg.position.y = self.pose_y
         pose_msg.position.z = 0.0
-        my_quaternion = self.euler_to_quaternion(self.plot_angle,0.0,0.0)
+        my_quaternion = self.euler_to_quaternion(self.pose_angle,0.0,0.0)
         pose_msg.orientation.x = my_quaternion[0]
         pose_msg.orientation.y = my_quaternion[1]
         pose_msg.orientation.z = my_quaternion[2]
@@ -133,32 +138,11 @@ class BaseMotorController(Node):
         self.pub.publish(pose_msg)
 
     def euler_to_quaternion(self,yaw, pitch, roll):
-        qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
-        qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
-        qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
-        qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+        qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+        qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
+        qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
+        qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
         return [qx, qy, qz, qw]
-
-    # def quaternionRotation(self,x=0.0, y=0.0, z=0.0):
-    #     quaternionRotation = []
-
-    #     x = math.radians(x)
-    #     y = math.radians(y)
-    #     z = math.radians(z)
-
-    #     chr = math.cos(x/2)
-    #     shr = math.sin(x/2)
-    #     chp = math.cos(y/2)
-    #     shp = math.sin(y/2)
-    #     chd = math.cos(z/2)
-    #     shd = math.sin(z/2)
-
-    #     quaternionRotation.append((chd*chp*shr-shd*shp*chr))
-    #     quaternionRotation.append((chd*shp*chr+shd*chp*shr))
-    #     quaternionRotation.append((shd*chp*chr-chd*shp*shr))
-    #     quaternionRotation.append((chd*chp*chr+shd*shp*shr))
-
-    #     return(quaternionRotation)
 
 def main(args=None):
     rclpy.init(args=args)
