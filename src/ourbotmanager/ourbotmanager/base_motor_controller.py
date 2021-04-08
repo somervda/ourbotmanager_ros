@@ -125,7 +125,7 @@ class BaseMotorController(Node):
     def publish_Pose(self):
         self.get_logger().info("pose_x:" + str(self.pose_x) + " pose_y:" + str(self.pose_y) + " pose_angle:" + str(self.pose_angle))
         # Convert plot_angle to a quaternion for a pose message see https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-        # plot_angle is equivalent to yaw
+        # plot_angle is equivalent to yaw.
         pose_msg = Pose()
         pose_msg.position.x = self.pose_x
         pose_msg.position.y = self.pose_y
