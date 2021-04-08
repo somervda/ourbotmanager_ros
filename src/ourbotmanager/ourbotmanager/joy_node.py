@@ -26,7 +26,6 @@ class JoyNode(Node):
         # Check the joystick hardware status,send a twist message when needed
         config = [0x83, 0xC3]
         # Start conversion
-        self.bus.
         self.bus.write_i2c_block_data(self.address, self.reg_config,config)
         # Wait for conversion
         time.sleep(0.01)
