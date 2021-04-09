@@ -13,6 +13,24 @@ class JoyNode(Node):
     
 
     exit = False
+    # Range of values to treat as a zero value for the joystick
+    ZERO_RANGE_MIN = -10
+    ZERO_RANGE_MAX = +10
+    # Use polatity to change if values increase or decrease going left to right or up to down
+    # Useful so you arn't dependent on how you wired up the joystick potentiometers
+    X_RANGE_POLARITY = -1
+    Y_RANGE_POLARITY = +1
+    # Granularity is the number of distinct values between -100 and +100 to support
+    # 20 will give you 10 distict positive and 10 negitive values
+    GRANULARITY = 5
+    # Keep track of last twist message sent
+    last_value_x = 0
+    last_value_y = 0
+    
+    # Publsh every n number of process_joy cycles
+    PUBLISH_CYCLES = 100
+    publish_counter = PUBLISH_CYCLES
+    
 
     def __init__(self):
         super().__init__("joy_node") 
@@ -39,7 +57,43 @@ class JoyNode(Node):
                 self.get_logger().error("Error reading ADC:" + str(sys.exc_info()[0]))
             # My ads1115 needed a little sleep between measuerments to settle on a good value
             time.sleep(0.01)
-        self.get_logger().info("Values:" + str(round(values[0] /265)) + ", " + str(round(values[1]/265)) )
+        # Convert to a value bettween 0 and 200 and number of distict values set by the granularity
+        value_x = (round(((round(values[0]/132) - 100) * self.X_RANGE_POLARITY) / self.GRANULARITY)) * self.GRANULARITY
+        value_y = (round(((round(values[1]/132) - 100) * self.Y_RANGE_POLARITY) / self.GRANULARITY)) * self.GRANULARITY
+        if value_x <= self.ZERO_RANGE_MAX and value_x >= self.ZERO_RANGE_MIN :
+            value_x = 0
+        if value_y <= self.ZERO_RANGE_MAX and value_y >= self.ZERO_RANGE_MIN :
+            value_y = 0
+        self.get_logger().info("Values:" + str(value_x) + ", " + str(value_y) )
+        # Only output a twist message when the joystick values change,
+        # output only the larger of the linear or angular values (Not both at the same time)
+        # If nothing published for N seconds then send the last value again.
+        doLinearPublish = False
+        doAngularPublish = False
+        msg = Twist()
+        self.publish_counter -= 1
+        if abs(value_x) > abs(value_y): 
+            # Deal with x
+            msg.angular.z = value_x/100
+            if self.last_value_x != value_x:
+                # Change in x value
+                doAngularPublish = True
+            if self.publish_counter == 0:
+                doAngularPublish = True        
+        else:
+            # Deal with y
+            msg.linear.x = value_y/100
+            if self.last_value_y != value_y:
+                # Change in y value
+                doLinearPublish = True
+            if self.publish_counter == 0:
+                doLinearPublish = True 
+        if doLinearPublish or doAngularPublish:
+            self.publish_counter = self.PUBLISH_CYCLES
+            self.pub.publish(msg)
+        self.last_value_x = value_x
+        self.last_value_y = value_y
+             
 
 def main(args=None):
     rclpy.init(args=args)
