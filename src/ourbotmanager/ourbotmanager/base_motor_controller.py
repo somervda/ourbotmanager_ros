@@ -37,14 +37,14 @@ class BaseMotorController(Node):
         self.ser = serial.Serial(self.SERIAL_PORT,9600,timeout=0)  # open serial port without blocking
         self.send_serial("") # Send to clear out any noise in the serial buffer 
         self.pub = self.create_publisher(Pose,"base/pose",10)
-        self.twist_subscriber = self.create_subscription(Twist,"base/cmd_vel",self.send_cmd_vel,10)
+        self.twist_subscriber = self.create_subscription(Twist,"base/twist",self.send_twist,10)
         # Fire up an asyncronous timer to check for messages from the ft232 on SERIAL_PORT
         self.serial_read_timer = self.create_timer(0.1 , self.read_serial) 
         # Reboot the uController for the new session
         self.send_serial("RB")
         self.get_logger().info("base_motor_controller has started")
 
-    def send_cmd_vel(self,msg):
+    def send_twist(self,msg):
         self.get_logger().info("Twist: Linear velocity: %f Angular velocity: %f" % (msg.linear.x, msg.angular.z))
         if msg.linear.x != 0 :
             # We are making a linear movement
