@@ -23,13 +23,17 @@ class JoyNode(Node):
     # Granularity is the number of distinct values between -100 and +100 to support
     # 20 will give you 10 distict positive and 10 negitive values
     GRANULARITY = 5
-    # Keep track of last twist message sent
+    # Keep track of last joystick values
     last_value_x = 0
     last_value_y = 0
+    # Scaling factors for converting joystick values to twist magnitudes
+    TWIST_LINEAR_SCALING = 0.02  # joystick 100 = twist 2ms velocity
+    TWIST_ANGULAR_SCALING = 0.01  # joystick 100 = twist 1 radians/sec velocity
+
     
-    # Publsh every n number of process_joy cycles
-    PUBLISH_CYCLES = 100
-    publish_counter = PUBLISH_CYCLES
+    # Republsh every n number of process_joy cycles to make sure base got last value (Might remove this)
+    PUBLISH_CYCLES = 10
+    republish_counter = PUBLISH_CYCLES
     
 
     def __init__(self):
@@ -68,28 +72,29 @@ class JoyNode(Node):
         # Only output a twist message when the joystick values change,
         # output only the larger of the linear or angular values (Not both at the same time)
         # If nothing published for N seconds then send the last value again.
-        doLinearPublish = False
-        doAngularPublish = False
+        doPublish = False
         msg = Twist()
-        self.publish_counter -= 1
+        self.republish_counter -= 1
         if abs(value_x) > abs(value_y): 
             # Deal with x
-            msg.angular.z = value_x/100
+            msg.angular.z = value_x * self.TWIST_ANGULAR_SCALING
             if self.last_value_x != value_x:
                 # Change in x value
-                doAngularPublish = True
-            if self.publish_counter == 0:
-                doAngularPublish = True        
-        else:
+                doPublish = True
+        elif abs(value_x) < abs(value_y):
             # Deal with y
-            msg.linear.x = value_y/100
+            msg.linear.x = value_y * self.TWIST_LINEAR_SCALING
             if self.last_value_y != value_y:
                 # Change in y value
-                doLinearPublish = True
-            if self.publish_counter == 0:
-                doLinearPublish = True 
-        if doLinearPublish or doAngularPublish:
-            self.publish_counter = self.PUBLISH_CYCLES
+                doPublish = True
+        else :
+            # Deal with joystick back to zero values
+            msg.linear.x = 0.0
+            msg.angular.y = 0.0
+            if self.last_value_y != 0 or self.last_value_x != 0:
+                doPublish = True
+        if doPublish or self.republish_counter == 0:
+            self.republish_counter = self.PUBLISH_CYCLES
             self.pub.publish(msg)
         self.last_value_x = value_x
         self.last_value_y = value_y
