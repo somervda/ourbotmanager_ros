@@ -7,11 +7,12 @@ import sys
 import time
 # Import the ADS1x15 module.
 import Adafruit_ADS1x15
+from gpiozero import LED
 
 
 class JoyNode(Node): 
     
-
+    rosRunLED = LED(13)
     exit = False
     # Range of values to treat as a zero value for the joystick
     ZERO_RANGE_MIN = -10
@@ -44,6 +45,7 @@ class JoyNode(Node):
             self.pub = self.create_publisher(Twist,"base/twist",10)
             # Fire up an asyncronous timer to check for messages from the ft232 on SERIAL_PORT
             self.joy_timer = self.create_timer(0.1 , self.process_joy) 
+            self.rosRunLED.on()
             self.get_logger().info("joy_node has started")
         except:
             # Note: a permission error can be fixed with a "sudo chmod a+rw /dev/i2c-1"
@@ -106,6 +108,7 @@ def main(args=None):
     if node.exit == False:
         rclpy.spin(node)
     node.get_logger().info("joy_node ending")
+    node.rosRunLED.off()
     rclpy.shutdown()
 
 
