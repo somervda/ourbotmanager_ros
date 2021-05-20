@@ -23,7 +23,7 @@ class JoyNode(Node):
     Y_RANGE_POLARITY = +1
     # Granularity is the number of distinct values between -100 and +100 to support
     # 20 will give you 10 distict positive and 10 negitive values
-    GRANULARITY = 5
+    GRANULARITY = 10
     # Keep track of last joystick values
     last_value_x = 0
     last_value_y = 0
