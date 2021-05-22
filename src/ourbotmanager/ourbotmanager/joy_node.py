@@ -5,7 +5,7 @@ from geometry_msgs.msg import Twist
 from smbus2 import SMBus
 import sys
 import time
-# Import the ADS1x15 module ..
+# Import the ADS1x15 module 
 import Adafruit_ADS1x15
 from gpiozero import LED
 
