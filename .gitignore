@@ -2,3 +2,4 @@ build/
 install/
 log/
 packages.microsoft.grp
+ydlidar_ros2_ws/src/ydlidar_ros2_driver
