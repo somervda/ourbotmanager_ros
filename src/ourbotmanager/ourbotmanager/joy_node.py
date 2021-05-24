@@ -19,8 +19,8 @@ class JoyNode(Node):
     ZERO_RANGE_MAX = +10
     # Use polatity to change if values increase or decrease going left to right or up to down
     # Useful so you arn't dependent on how you wired up the joystick potentiometers
-    X_RANGE_POLARITY = -1
-    Y_RANGE_POLARITY = +1
+    X_RANGE_POLARITY = 1
+    Y_RANGE_POLARITY = 1
     # Granularity is the number of distinct values between -100 and +100 to support
     # 20 will give you 10 distict positive and 10 negitive values
     GRANULARITY = 10
