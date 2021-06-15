@@ -8,6 +8,7 @@ import os
 import math
 
 class BaseMotorController(Node):
+    VERSION = '1.005'
     SERIAL_PORT = '/dev/ttyUSB0'
 
     # Update based on actual base specs.
@@ -21,10 +22,13 @@ class BaseMotorController(Node):
     pose_y = 0.0
     pose_angle = 0.0
 
+    # Keep track of last serial message type
+    lastSerialMessageType = "RB"
+
     # Conversion factors for converting the base_feedback info that is in motor encoder ticks
     # to meters and radians used by the pose message. Update based on actual base specs.
-    TICKS_TO_METERS = 0.001
-    TICKS_TO_RADIANS = 0.01
+    TICKS_TO_METERS = 0.00058345
+    TICKS_TO_RADIANS = 0.0047276
 
     # Information recieved from the base about movement : Type & magnitude
     base_movement_info = ""
@@ -42,13 +46,17 @@ class BaseMotorController(Node):
         self.serial_read_timer = self.create_timer(0.1 , self.read_serial) 
         # Reboot the uController for the new session
         self.send_serial("RB")
-        self.get_logger().info("base_motor_controller has started")
+        self.lastSerialMessageType = "RB"
+        self.get_logger().info("base_motor_controller has started: " +  self.VERSION)
 
     def send_twist(self,msg):
-        self.get_logger().info("Twist: Linear velocity: %f Angular velocity: %f" % (msg.linear.x, msg.angular.z))
+        # self.get_logger().info("Twist: Linear velocity: %f Angular velocity: %f" % (msg.linear.x, msg.angular.z))
         if msg.linear.x != 0 :
             # We are making a linear movement
             direction = 1
+            if self.lastSerialMessageType == "TV":
+                self.send_serial("SP")
+                self.lastSerialMessageType = "SP"
             # Set pwd and adjust to limits
             if msg.linear.x < 0:
                 direction = -1
@@ -57,11 +65,15 @@ class BaseMotorController(Node):
                 pwd = self.PWD_MIN * direction
             if abs(pwd) > 100 :
                 pwd = 100 * direction
-            self.get_logger().info("sending serial:" + "RV" +  "%+4d" % pwd)
+            # self.get_logger().info("sending serial:" + "RV" +  "%+4d" % pwd)
             self.send_serial("RV" +  "%+4d" % pwd)
+            self.lastSerialMessageType = "RV"
         elif msg.angular.z != 0 :
             # We are making a turn
             direction = 1
+            if self.lastSerialMessageType == "RV":
+                self.send_serial("SP")
+                self.lastSerialMessageType = "SP"
             # Set pwd and adjust to limits
             if msg.angular.x < 0 :
                 direction = -1
@@ -70,11 +82,13 @@ class BaseMotorController(Node):
                 pwd = self.PWD_MIN * direction
             if abs(pwd) > 100 :
                 pwd = 100 * direction
-            self.get_logger().info("sending serial:" + "TV" +  "%+4d" % pwd)
+            # self.get_logger().info("sending serial:" + "TV" +  "%+4d" % pwd)
             self.send_serial("TV" +  "%+4d" % pwd)
+            self.lastSerialMessageType = "TV"
         else:
-            self.get_logger().info("sending serial:" + "SP")
+            # self.get_logger().info("sending serial:" + "SP")
             self.send_serial("SP")
+            self.lastSerialMessageType = "SP"
 
     def send_serial(self,send):
         self.ser.write((send + "\n").encode())
@@ -120,6 +134,7 @@ class BaseMotorController(Node):
                         # Calculate pose_x and pose_y co-ordinants based on current location, pose_angle and distance moved
                         self.pose_x += (self.TICKS_TO_METERS * ticks) * math.cos(self.pose_angle)
                         self.pose_y += (self.TICKS_TO_METERS * ticks) * math.sin(self.pose_angle)
+                        self.get_logger().info("cos:" + str(math.cos(self.pose_angle)) + " sin:" + str(math.sin(self.pose_angle))) 
                         self.publish_Pose()
                         
     def publish_Pose(self):
